@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proteção Anti-Pirataria T41</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- Style sheet link -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="background-decorations">
+        <div class="circle circle-1"></div>
+        <div class="circle circle-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo">
+                <span class="shield-icon">🛡️</span>
+                <h1>Sistema de Proteção T41</h1>
+            </div>
+            <p class="subtitle">Insira marcas d'água de forma ultra-segura e personalizada nos seus PDFs.</p>
+        </header>
+
+        <main class="glass-card">
+            <form id="watermarkForm">
+                <!-- Dropzone Area -->
+                <div class="upload-area" id="dropzone">
+                    <input type="file" id="pdfFileInput" name="file" accept=".pdf" required hidden>
+                    <div class="upload-content">
+                        <span class="upload-icon">📄</span>
+                        <h3>Arraste seu PDF aqui</h3>
+                        <p>ou clique para explorar seus arquivos</p>
+                    </div>
+                    <div class="file-info" id="fileInfo">
+                        <span class="file-icon">✅</span>
+                        <span class="file-name" id="selectedFileName">arquivo.pdf</span>
+                        <button type="button" class="btn-remove-file" id="btnRemoveFile">remover</button>
+                    </div>
+                </div>
+
+                <!-- Input fields -->
+                <div class="input-group">
+                    <label for="nameInput">Nome do Comprador *</label>
+                    <input type="text" id="nameInput" name="name" placeholder="Ex: João Silva" required autocomplete="off">
+                </div>
+
+                <div class="input-group">
+                    <label for="docInput">Documento / ID <span class="optional">(Opcional)</span></label>
+                    <input type="text" id="docInput" name="doc" placeholder="Ex: CPF ou E-mail" autocomplete="off">
+                </div>
+
+                <!-- Submit Button -->
+                <button type="submit" class="btn-submit" id="btnSubmit">
+                    <span class="btn-text">Aplicar Proteção e Baixar</span>
+                    <div class="spinner" id="btnSpinner"></div>
+                </button>
+            </form>
+
+            <!-- Loading overlay inside card -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="loading-box">
+                    <div class="pulse-loader"></div>
+                    <h3>Protegendo seu documento...</h3>
+                    <p>Aplicando marcas d'água visíveis, esteganográficas e criptográficas.</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="network-info">
+                <h3>Acesso de qualquer aparelho</h3>
+                <p>Abra este site em outros dispositivos na mesma rede Wi-Fi usando o endereço:</p>
+                <div class="ip-address" id="localIpAddress">http://localhost:5000</div>
+            </div>
+            <p class="copyright">&copy; 2026 Todos os direitos reservados | Sistema Anti-Pirataria T41</p>
+        </footer>
+    </div>
+
+    <!-- Main JS link -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
