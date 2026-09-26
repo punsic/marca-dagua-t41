@@ -172,6 +172,18 @@ def api_watermark():
     except Exception as e:
         return jsonify({"error": f"Erro ao processar o PDF: {str(e)}"}), 500
 
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error": "Arquivo muito grande. O limite é de 32MB."}), 413
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Rota não encontrada."}), 404
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({"error": "Erro interno no servidor. Tente novamente."}), 500
+
 if __name__ == '__main__':
     # Roda em 0.0.0.0 na porta 5000 para acesso via rede local
     port = int(os.environ.get("PORT", 5000))
