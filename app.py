@@ -1,6 +1,7 @@
 import os
 import io
 import hashlib
+import tempfile
 from datetime import datetime
 from flask import Flask, request, render_template, send_file, jsonify
 
@@ -20,7 +21,12 @@ except ImportError:
 app = Flask(__name__)
 
 # Configura limite máximo de upload (ex: 32MB)
-app.config['MAX_CONTENT_LENGTH'] = 300 * 1024 * 1024  # 300MB
+# Limite de upload configurável. Defina MAX_UPLOAD_MB=0 (ou não defina a
+# variável) para rodar SEM limite — útil para uso local, onde não há a
+# restrição de RAM do plano free do Render.
+_max_upload_mb = int(os.environ.get('MAX_UPLOAD_MB', '80'))
+if _max_upload_mb > 0:
+    app.config['MAX_CONTENT_LENGTH'] = _max_upload_mb * 1024 * 1024
 
 def create_watermark_in_memory(buyer_name, buyer_doc):
     if buyer_doc and buyer_doc.lower() == "none":
@@ -91,22 +97,38 @@ def create_watermark_in_memory(buyer_name, buyer_doc):
     pdf_buffer.seek(0)
     return pdf_buffer, tx_hash
 
-def process_pdf(input_stream, buyer_name, buyer_doc=""):
-    # Cria a marca d'água em memória
+def process_pdf(input_path, output_path, buyer_name, buyer_doc="", watermark_over=False):
+    # Cria a marca d'água em memória (é só 1 página, isso é leve)
     wm_stream, tx_hash = create_watermark_in_memory(buyer_name, buyer_doc)
-    
-    reader_main = PdfReader(input_stream)
+
+    # Lendo direto do arquivo em disco (em vez de um BytesIO com tudo
+    # carregado), o pypdf evita manter uma cópia extra dos bytes crus
+    # do upload inteiro na RAM.
+    reader_main = PdfReader(input_path)
+
+    if reader_main.is_encrypted:
+        # A maioria dos PDFs "protegidos" (sem senha pra abrir, só com
+        # restrição de cópia/impressão) usa senha vazia internamente.
+        result = reader_main.decrypt("")
+        if result == 0:
+            raise ValueError(
+                "Este PDF exige uma senha para ser aberto. "
+                "Remova a senha do arquivo antes de enviar."
+            )
+
     reader_wm = PdfReader(wm_stream)
     wm_page = reader_wm.pages[0]
-    
+
     writer = PdfWriter()
-    
-    # Processa cada página aplicando a marca d'água SOBRE os elementos (para não ficar escondida por fundos sólidos)
+
+    # over=True  -> marca d'água na FRENTE (sempre visível, mesmo sobre imagens
+    #               cheias, mas pode cobrir parte do conteúdo original)
+    # over=False -> marca d'água ATRÁS (nunca atrapalha a leitura, mas some
+    #               em páginas com fundo/imagem cobrindo a folha inteira)
     for page in reader_main.pages:
-        # Mescla wm_page (marca d'água translúcida) por CIMA de page (conteúdo original)
-        page.merge_page(wm_page)
+        page.merge_page(wm_page, over=watermark_over)
         writer.add_page(page)
-        
+
     # Copia e enriquece metadados para segurança extra
     metadata = reader_main.metadata
     new_metadata = {
@@ -115,21 +137,22 @@ def process_pdf(input_stream, buyer_name, buyer_doc=""):
         "/Subject": f"Licença de uso exclusivo concedida a {buyer_name}",
         "/Keywords": f"Licenciado, {buyer_name}, {buyer_doc}, {tx_hash}, Protegido",
         "/LicensedTo": buyer_name,
-        "/TransactionHash": tx_hash 
+        "/TransactionHash": tx_hash
     }
-    
+
     if metadata:
         for key in metadata:
             if key not in new_metadata:
                 new_metadata[key] = metadata[key]
-                
+
     writer.add_metadata(new_metadata)
-    
-    output_stream = io.BytesIO()
-    writer.write(output_stream)
-    output_stream.seek(0)
-    
-    return output_stream, tx_hash
+
+    # Escreve direto no disco em vez de montar tudo em um BytesIO,
+    # evitando manter o PDF de saída inteiro duplicado na RAM.
+    with open(output_path, 'wb') as f:
+        writer.write(f)
+
+    return tx_hash
 
 @app.route('/')
 def index():
@@ -143,6 +166,8 @@ def api_watermark():
     file = request.files['file']
     buyer_name = request.form.get('name', '').strip()
     buyer_doc = request.form.get('doc', '').strip()
+    # 'under' (padrão) = marca atrás do conteúdo | 'over' = marca na frente
+    watermark_over = request.form.get('mode', 'under').strip().lower() == 'over'
     
     if file.filename == '':
         return jsonify({"error": "Nenhum arquivo selecionado"}), 400
@@ -153,28 +178,59 @@ def api_watermark():
     if not buyer_name:
         return jsonify({"error": "O nome do comprador é obrigatório"}), 400
         
+    # Salva o upload direto em disco (o Flask/Werkzeug já recebe o corpo da
+    # requisição em streaming, então isso evita segurar o arquivo inteiro
+    # como bytes soltos na RAM antes mesmo de começar a processar).
+    tmp_dir = tempfile.mkdtemp(prefix="watermark_")
+    input_path = os.path.join(tmp_dir, "entrada.pdf")
+    output_path = os.path.join(tmp_dir, "saida.pdf")
+
     try:
-        # Processa tudo em memória
-        input_stream = io.BytesIO(file.read())
-        output_stream, tx_hash = process_pdf(input_stream, buyer_name, buyer_doc)
-        
+        file.save(input_path)
+
+        tx_hash = process_pdf(input_path, output_path, buyer_name, buyer_doc, watermark_over)
+
         # Gera o nome do arquivo licenciado
         base_name, ext = os.path.splitext(file.filename)
         safe_name = "".join([c if c.isalnum() else "_" for c in buyer_name]).strip("_")
         output_filename = f"{base_name}_[Licenciado_{safe_name}]{ext}"
-        
-        return send_file(
-            output_stream,
+
+        response = send_file(
+            output_path,
             mimetype='application/pdf',
             as_attachment=True,
             download_name=output_filename
         )
+
+        # Limpa os arquivos temporários assim que a resposta terminar de ser enviada
+        @response.call_on_close
+        def _cleanup():
+            for p in (input_path, output_path):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+            try:
+                os.rmdir(tmp_dir)
+            except OSError:
+                pass
+
+        return response
     except Exception as e:
+        for p in (input_path, output_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
         return jsonify({"error": f"Erro ao processar o PDF: {str(e)}"}), 500
 
 @app.errorhandler(413)
 def too_large(e):
-    return jsonify({"error": "Arquivo muito grande. O limite é de 300MB."}), 413
+    return jsonify({"error": f"Arquivo muito grande. O limite é de {_max_upload_mb}MB."}), 413
 
 @app.errorhandler(404)
 def not_found(e):
