@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function handleFileSelect(file) {
-        if (file.type !== 'application/pdf' && !file.name.toLowerCase().endswith('.pdf')) {
+        if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
             alert('Por favor, selecione apenas arquivos PDF.');
             resetFileSelection();
             return;
@@ -107,8 +107,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Erro desconhecido ao processar arquivo.');
+                let message = `Erro do servidor (código ${response.status}).`;
+                try {
+                    const errorData = await response.json();
+                    message = errorData.error || message;
+                } catch (jsonErr) {
+                    // O servidor não devolveu JSON (ex: página de erro em HTML)
+                }
+                throw new Error(message);
             }
 
             // Lê o arquivo retornado como Blob
