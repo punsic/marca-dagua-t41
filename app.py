@@ -20,7 +20,7 @@ except ImportError:
 app = Flask(__name__)
 
 # Configura limite máximo de upload (ex: 32MB)
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 300 * 1024 * 1024  # 300MB
 
 def create_watermark_in_memory(buyer_name, buyer_doc):
     if buyer_doc and buyer_doc.lower() == "none":
@@ -174,7 +174,7 @@ def api_watermark():
 
 @app.errorhandler(413)
 def too_large(e):
-    return jsonify({"error": "Arquivo muito grande. O limite é de 32MB."}), 413
+    return jsonify({"error": "Arquivo muito grande. O limite é de 300MB."}), 413
 
 @app.errorhandler(404)
 def not_found(e):
